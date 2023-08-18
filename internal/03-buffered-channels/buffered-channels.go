@@ -14,24 +14,17 @@ func main() {
 
 	go func(id int) { // senders
 		for i := 0; i < 10; i++ {
-			err := ch.Send(i)
-			if err != nil {
-				fmt.Println("sender", id, ": error received:", err)
-			} else {
-				fmt.Println("sender", id, ": value sent:", i)
-			}
+			ch.Send(i)
+			fmt.Println("sender", id, ": value sent:", i)
 		}
 		wg.Done()
 	}(0)
 
 	go func(id int) {
 		for i := 0; i < 10; i++ {
-			val, err := ch.Receive()
-			if err != nil {
-				fmt.Println("receiver", id, "error received:", err)
-			} else {
-				fmt.Println("receiver", id, "value received:", val)
-			}
+			val := ch.Receive()
+			fmt.Println("receiver", id, "value received:", val)
+
 		}
 		wg.Done()
 	}(0)
@@ -46,26 +39,30 @@ type BufferedChannel struct {
 
 	isFull bool // true iff the channel is full
 
-	mut *sync.Mutex
+	mut          *sync.Mutex
+	fullWaiters  *sync.Cond
+	emptyWaiters *sync.Cond
 }
 
 func NewBufferedChannel(size int) *BufferedChannel {
-	return &BufferedChannel{
+	result := &BufferedChannel{
 		buffer: make([]int, size),
 		mut:    &sync.Mutex{},
 	}
+	result.fullWaiters = sync.NewCond(result.mut)
+	result.emptyWaiters = sync.NewCond(result.mut)
+	return result
 }
 
 var ErrEmpty = errors.New("channel was empty")
 var ErrFull = errors.New("channel was full")
 
-func (bc *BufferedChannel) Send(val int) error {
+func (bc *BufferedChannel) Send(val int) {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
-	// "critical section"
 
-	if bc.head == bc.tail && bc.isFull {
-		return ErrFull
+	for bc.head == bc.tail && bc.isFull {
+		bc.fullWaiters.Wait() // wait for the buffer to be not full
 	}
 
 	bc.buffer[bc.head] = val
@@ -74,23 +71,24 @@ func (bc *BufferedChannel) Send(val int) error {
 	if bc.head == bc.tail {
 		bc.isFull = true
 	}
+	bc.emptyWaiters.Signal()
 
-	return nil
+	return
 }
 
-func (bc *BufferedChannel) Receive() (int, error) {
+func (bc *BufferedChannel) Receive() int {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
-	// begin "critical section"
 
-	if bc.head == bc.tail && !bc.isFull { // TODO: fill in this conditional
-		return 0, ErrEmpty
+	for bc.head == bc.tail && !bc.isFull {
+		bc.emptyWaiters.Wait()
 	}
 
 	val := bc.buffer[bc.tail]
 	bc.tail = (bc.tail + 1) % len(bc.buffer)
 
 	bc.isFull = false
+	bc.fullWaiters.Signal()
 
-	return val, nil
+	return val
 }
