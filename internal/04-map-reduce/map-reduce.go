@@ -15,11 +15,11 @@ var lines = []string{
 
 func main() {
 	numMappers := 3
-	numReducers := 26
+	numReducers := 6 // max at 26 -- (because of our hacky choice of hash function)
 
 	lineChan := make(chan string)
-	wordChannels := [26]chan string{}
-	for i := 0; i < 26; i++ {
+	wordChannels := make([]chan string, numReducers)
+	for i := 0; i < numReducers; i++ {
 		wordChannels[i] = make(chan string)
 	}
 	countChannel := make(chan map[string]int)
@@ -33,7 +33,7 @@ func main() {
 				mapperWg.Done()
 				if id == 0 { // mapper with id = 0 will close all reducer channels
 					mapperWg.Wait() // wait for all mappers to conclude sending
-					for i := 0; i < 26; i++ {
+					for i := 0; i < numReducers; i++ {
 						close(wordChannels[i]) // close reducer channels.
 					}
 				}
@@ -45,7 +45,7 @@ func main() {
 				line = strings.ToLower(line)
 				words := strings.Split(line, " ")
 				for _, word := range words {
-					idx := int(word[0] - 'a') // dirty trick
+					idx := (int(word[0] - 'a')) % numReducers // dirty trick
 					wordChannels[idx] <- word
 				}
 			}
