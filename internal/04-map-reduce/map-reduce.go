@@ -3,8 +3,9 @@ package main
 import (
 	"fmt"
 	"strings"
-	"sync"
 )
+
+// Available at: https://go.dev/play/p/aJuViXf6ZYI
 
 var lines = []string{
 	"Lorem Ipsum is simply dummy text of the printing and typesetting industry.",
@@ -15,7 +16,7 @@ var lines = []string{
 
 func main() {
 	numMappers := 3
-	numReducers := 6 // max at 26 -- (because of our hacky choice of hash function)
+	numReducers := 26 // max at 26 -- (because of our hacky choice of hash function)
 
 	lineChan := make(chan string)
 	wordChannels := make([]chan string, numReducers)
@@ -25,48 +26,26 @@ func main() {
 	countChannel := make(chan map[string]int)
 
 	// mappers
-	var mapperWg sync.WaitGroup
 	for i := 0; i < numMappers; i++ {
-		mapperWg.Add(1)
 		go func(id int) {
-			defer func() {
-				mapperWg.Done()
-				if id == 0 { // mapper with id = 0 will close all reducer channels
-					mapperWg.Wait() // wait for all mappers to conclude sending
-					for i := 0; i < numReducers; i++ {
-						close(wordChannels[i]) // close reducer channels.
-					}
-				}
-			}()
-
 			for line := range lineChan {
 				// take the first letter in the word and use it to send
 				// to the correct reducer
 				line = strings.ToLower(line)
 				words := strings.Split(line, " ")
 				for _, word := range words {
-					idx := (int(word[0] - 'a')) % numReducers // dirty trick
+					idx := int(word[0] - 'a') // dirty trick to find the channel to use
 					wordChannels[idx] <- word
 				}
 			}
-			fmt.Printf("mapper %d finished\n", id)
+			fmt.Printf("mapper %d finished", id)
 		}(i)
 	}
 
 	// reducers
-	var reducerWg sync.WaitGroup
 	for i := 0; i < numReducers; i++ {
-		reducerWg.Add(1)
 		go func(id int) {
-			defer func() {
-				reducerWg.Done()
-				if id == 0 {
-					reducerWg.Wait()
-					close(countChannel)
-					fmt.Println("count channel closing")
-				}
-			}()
-			// counting all the words seen
+			// count all the words seen by this reducer
 			localMap := make(map[string]int)
 			for word := range wordChannels[id] {
 				localMap[word]++
@@ -77,10 +56,7 @@ func main() {
 	}
 
 	// consumer
-	var consumerWg sync.WaitGroup
-	consumerWg.Add(1)
 	go func() {
-		defer consumerWg.Done()
 		for counts := range countChannel {
 			fmt.Println("consumer received: ", counts)
 		}
@@ -91,10 +67,7 @@ func main() {
 	for _, line := range lines {
 		lineChan <- line
 	}
-	close(lineChan)
 	fmt.Println("all lines sent!")
 
-	reducerWg.Wait()
-	mapperWg.Wait()
-	consumerWg.Wait()
+	fmt.Println("main func complete!")
 }
