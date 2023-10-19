@@ -20,14 +20,17 @@ func main() {
 	numMappers := 3  // any value
 	numReducers := 5 // anything from [1, 26]
 
+	var wg sync.WaitGroup
 	lineChan := make(chan string)
 	// 1. pass each line into lineChan (fan out)
+	wg.Add(1)
 	go func() {
-		defer close(lineChan)
+		defer wg.Done()
 		for _, line := range lines {
 			lineChan <- line
 		}
 		fmt.Println("line feeder is done")
+		close(lineChan)
 	}()
 
 	// 2. start mappers which read from lineChan, split lines into words, and send via wordChannels to the appropriate
@@ -36,7 +39,6 @@ func main() {
 	for i := 0; i < len(wordChans); i++ {
 		wordChans[i] = make(chan string)
 	}
-
 	var mwg sync.WaitGroup
 	for i := 0; i < numMappers; i++ {
 		mwg.Add(1)
@@ -48,9 +50,10 @@ func main() {
 					for _, ch := range wordChans {
 						close(ch)
 					}
+					fmt.Println("closed all wordChans")
 				}
 			}()
-			for line := range lineChan { // breaks b/c of the close at line 26
+			for line := range lineChan { // TODO: how does this range loop end?
 				words := strings.Split(line, " ")
 				for _, word := range words {
 					if len(word) == 0 {
@@ -66,9 +69,8 @@ func main() {
 	}
 
 	// 3. start reducers which read from wordChannels, form a local wordcount, and send the results to countChannel.
-
-	countChan := make(chan map[string]int)
 	var rwg sync.WaitGroup
+	countChan := make(chan map[string]int)
 	for i := 0; i < numReducers; i++ {
 		rwg.Add(1)
 		go func(id int) {
@@ -80,7 +82,7 @@ func main() {
 				}
 			}()
 			wordCount := make(map[string]int)
-			for word := range wordChans[id] {
+			for word := range wordChans[id] { // TODO: how does this range loop end?
 				wordCount[word]++
 			}
 			countChan <- wordCount
@@ -89,9 +91,10 @@ func main() {
 	}
 
 	// Make sure everything shuts down gracefully before the process ends.
-	for count := range countChan {
+	for count := range countChan { // TODO: how does this range loop end?
 		fmt.Println("count received:", count)
 	}
+	wg.Wait() // TODO: why don't I have more Wait() calls here?!!?
 
 	fmt.Println("main thread is done")
 }
