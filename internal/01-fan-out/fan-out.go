@@ -12,8 +12,8 @@ func main() {
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go func(msgID int) {
+			defer wg.Done()
 			SlowRPCs(msgID)
-			wg.Done()
 		}(i)
 	}
 	wg.Wait()
