@@ -7,19 +7,31 @@ import (
 )
 
 func main() {
-	n := 10
+	numMsgs := 100
+	numWorkers := 10
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+
+	workQueue := make(chan int)
+
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(msgID int) {
+		go func(workerID int) {
 			defer wg.Done()
-			SlowRPCs(msgID)
+			for msgID := range workQueue {
+				SlowRPCs(workerID, msgID)
+			} // only way to break from a channel range loop is when channel is closed
 		}(i)
 	}
+
+	for msgID := 0; msgID < numMsgs; msgID++ {
+		workQueue <- msgID // send the ith message (could be a blocking operation)
+	}
+	close(workQueue) // it is always the senders responsibility to close the channel
+
 	wg.Wait()
 }
 
-func SlowRPCs(x int) {
+func SlowRPCs(workerID, msgID int) {
 	time.Sleep(500 * time.Millisecond) // fake latency.
-	fmt.Printf("sending RPC with value %d\n", x)
+	fmt.Printf("worker #%d sending RPC with value %d\n", workerID, msgID)
 }
