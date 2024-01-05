@@ -5,7 +5,7 @@ import "sync"
 // https://go.dev/play/p/0YBVXu1N2CR
 
 func main() {
-	ch := make(chan int)
+	fanInChan := make(chan int)
 	var wg sync.WaitGroup
 
 	// TODO: start 10 'producer' goroutines
