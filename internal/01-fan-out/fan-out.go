@@ -32,7 +32,6 @@ func main() {
 				}
 			}
 		}()
-		// guarantee: at some point in future, LongRunningRPC will run in parallel.
 	}
 
 loop:
