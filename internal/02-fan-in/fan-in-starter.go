@@ -29,10 +29,12 @@ func main() {
 		}()
 	}
 
-	for data := range ch {
-		fmt.Println("data received:", data)
-	}
-	fmt.Println("consumer done")
+	go func() {
+		for data := range ch {
+			fmt.Println("data received:", data)
+		}
+		fmt.Println("consumer done")
+	}()
 
 	wg.Wait()
 	fmt.Println("main func done")
