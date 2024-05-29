@@ -1,43 +1,18 @@
 package main
 
-import (
-	"fmt"
-	"sync"
-)
-
-// https://go.dev/play/p/0YBVXu1N2CR
+import "sync"
 
 func main() {
-	fanInChan := make(chan int)
-	var producerWg sync.WaitGroup
+	ch := make(chan int)
+	var wg sync.WaitGroup
 
-	for i := 0; i < 10; i++ {
-		producerWg.Add(1)
-		go func(workerID int) {
-			defer func() {
-				producerWg.Done()
-				if workerID == 0 {
-					producerWg.Wait()
-					close(fanInChan)
-				}
-			}()
-			for j := 0; j < 10; j++ {
-				fanInChan <- j
-			}
-			fmt.Printf("producer %d finished\n", workerID)
-		}(i)
-	}
+	// TODO: start 10 'producer' goroutines
+	// Each producer should generate and send 10 integers to the consumer using fanInChan.
 
-	var consumerWg sync.WaitGroup
-	consumerWg.Add(1)
-	go func() {
-		defer consumerWg.Done()
-		for msg := range fanInChan {
-			fmt.Printf("received %d\n", msg)
-		}
-		fmt.Println("consumer finished")
-	}()
+	// TODO: start 1 consumer goroutine
+	// The consumer should receive all of the integers from fanInChan and print them out.
 
-	producerWg.Wait()
-	consumerWg.Wait()
+	// Challenge: Use wait-groups to ensure that every goroutine returns before the main() func stops.
+
+	wg.Wait()
 }
