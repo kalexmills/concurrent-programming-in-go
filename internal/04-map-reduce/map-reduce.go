@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // https://go.dev/play/p/CU8lt4mIflo
@@ -15,11 +16,13 @@ var lines = []string{
 }
 
 func main() {
+	numReducers := 5
+
+	wordsChan := make([]chan string, numReducers)
 	linesChan := make(chan string)
-	wordsChan := make([]chan string, 26)
 	countChan := make(chan map[string]int)
 
-	for i := 0; i < 26; i++ {
+	for i := 0; i < numReducers; i++ {
 		wordsChan[i] = make(chan string)
 	}
 
@@ -27,33 +30,60 @@ func main() {
 		for _, line := range lines {
 			linesChan <- line
 		}
+		close(linesChan)
+		fmt.Printf("lines producer done\n")
 	}()
 
+	var wgMapper sync.WaitGroup
 	numMappers := 3
 	for i := 0; i < numMappers; i++ {
+		wgMapper.Add(1)
 		go func() {
+			defer func() {
+				wgMapper.Done()
+				if i == 0 {
+					wgMapper.Wait()
+					for _, ch := range wordsChan {
+						close(ch)
+					}
+				}
+			}()
+
 			for line := range linesChan {
 				words := strings.Split(strings.ToLower(line), " ")
 				for _, word := range words {
 					key := int(word[0] - 'a')
-					wordsChan[key] <- word
+					wordsChan[key%numReducers] <- word
 				}
 			}
+			fmt.Printf("mapper %d done\n", i)
 		}()
 	}
 
-	numReducers := 26
+	var wgReducer sync.WaitGroup
 	for i := 0; i < numReducers; i++ {
+		wgReducer.Add(1)
 		go func() {
+			defer func() {
+				wgReducer.Done()
+				if i == 0 {
+					wgReducer.Wait()
+					close(countChan)
+				}
+			}()
+
 			countMap := make(map[string]int)
-			for word := range wordsChan[i] { // TODO: deadlock here
+			for word := range wordsChan[i] {
 				countMap[word] += 1
 			}
 			countChan <- countMap
+			fmt.Printf("reducer %d done\n", i)
 		}()
 	}
 
 	for countMap := range countChan {
 		fmt.Println("received map:", countMap)
 	}
+
+	fmt.Println("main func completed")
 }
