@@ -9,7 +9,7 @@ import (
 
 func main() {
 	ctx := context.Background()
-	ctx, done := context.WithTimeout(ctx, time.Millisecond*250)
+	ctx, done := context.WithTimeout(ctx, time.Millisecond*10000)
 	defer done()
 
 	workerPool := make(chan int)
@@ -41,7 +41,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer func() {
-			close(workerPool) // TODO: deadlock if these are in wrong order
+			close(workerPool)
 			wg.Done()
 		}()
 		for i := 0; i < 100; i++ {
