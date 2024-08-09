@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
 )
 
 func main() {
+	ctx := context.Background()
+	ctx, done := context.WithTimeout(ctx, time.Millisecond*250)
+	defer done()
+
 	workerPool := make(chan int)
 
 	var wg sync.WaitGroup
@@ -14,8 +19,18 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for data := range workerPool { // loop until channel is closed
-				DoRPC(data)
+		loop:
+			for {
+				select {
+				case data, ok := <-workerPool:
+					if !ok {
+						break loop
+					}
+					DoRPC(data)
+				case <-ctx.Done():
+					fmt.Printf("timeout occurred on receiver %d!\n", id)
+					break loop
+				}
 			}
 			fmt.Printf("receiver %d is done!\n", id)
 		}()
@@ -25,11 +40,20 @@ func main() {
 
 	wg.Add(1)
 	go func() {
-		defer wg.Done()
+		defer func() {
+			close(workerPool) // TODO: deadlock if these are in wrong order
+			wg.Done()
+		}()
 		for i := 0; i < 100; i++ {
-			workerPool <- i // block until a receiver is available (when channel is full)
+			select {
+			case workerPool <- i: // block until a receiver is available (when channel is full)
+				// do nothing
+			case <-ctx.Done():
+				fmt.Println("sender timed out!")
+				return
+			}
 		}
-		close(workerPool)
+
 		fmt.Println("sender is done!")
 	}()
 
