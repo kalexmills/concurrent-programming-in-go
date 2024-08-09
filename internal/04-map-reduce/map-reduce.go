@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // https://go.dev/play/p/CU8lt4mIfl
@@ -17,10 +18,15 @@ var lines = []string{
 func main() {
 	linesCh := make(chan string)
 
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for _, line := range lines {
 			linesCh <- line
 		}
+		close(linesCh) // happens-before end of mapper range-over-channel
+		fmt.Println("producer done")
 	}()
 
 	numMappers := 3
@@ -31,31 +37,62 @@ func main() {
 	}
 
 	for i := 0; i < numMappers; i++ {
+		wg.Add(1)
 		go func() {
-			for line := range linesCh {
+			defer func() {
+				wg.Done()
+				if i == 0 {
+					wg.Wait()
+					for _, ch := range wordsChs {
+						close(ch) // happens before end of reducers range-over-channel
+					}
+				}
+			}()
+
+			// mapper's range-over-channel
+			for line := range linesCh { // end happens before close of wordsChs
 				words := strings.Split(strings.ToLower(line), " ")
 				for _, word := range words {
 					key := int(word[0]-'a') % numReducers
 					wordsChs[key] <- word
 				}
 			}
+			fmt.Println("mapper done:", i)
 		}()
 	}
 
+	var reducerWg sync.WaitGroup
 	countCh := make(chan map[string]int)
 	for i := 0; i < numReducers; i++ {
 		localCount := make(map[string]int)
+		reducerWg.Add(1)
 		go func() {
-			for word := range wordsChs[i] {
+			defer func() {
+				reducerWg.Done()
+				if i == 0 {
+					reducerWg.Wait()
+					close(countCh) // happens-before end of consumer's range-over-channel
+				}
+			}()
+			// reducers range-over-channel
+			for word := range wordsChs[i] { // end happens before close of countCh
 				localCount[word]++
 			}
 			countCh <- localCount
+			fmt.Println("reducer done:", i)
 		}()
 	}
 
+	var consumerWg sync.WaitGroup
+	consumerWg.Add(1)
 	go func() {
-		for count := range countCh {
+		defer consumerWg.Done()      // happens-before end of consumerWg.Wait() at line 96
+		for count := range countCh { // consumer's range-over-channel
 			fmt.Println("got count:", count)
 		}
+		fmt.Println("consumer done")
 	}()
+
+	consumerWg.Wait()
+	fmt.Print("main done")
 }
