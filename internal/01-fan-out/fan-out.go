@@ -8,56 +8,57 @@ import (
 )
 
 func main() {
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, 1000*time.Millisecond)
-	defer cancel() // for resource cleanup
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	// contexts carry timeouts and deadlines
+	// have a Done() channel which is closed when timeout or deadline has elapsed.
+
+	ch := make(chan int) // work queue
+	n := 100
 
 	var wg sync.WaitGroup
-	numWorkers := 10
-
-	workQueue := make(chan int)
-
-	for i := 0; i < numWorkers; i++ {
+	for id := 0; id < 10; id++ {
 		wg.Add(1)
-		go func(workerID int) { // worker goroutines
-			defer wg.Done() // -- 'happens before' line 33
-			for {           // blocks until a msg is received
+		go func() {
+			defer func() {
+				fmt.Printf("worker %d done\n", id)
+				wg.Done()
+			}()
+			// blocks until next value in channel is ready
+			for {
 				select {
-				case msg, ok := <-workQueue:
+				case msg, ok := <-ch:
 					if !ok {
-						fmt.Println("channel closed! from worker", workerID)
+						fmt.Printf("worker %d done; channel closed\n", id)
 						return
 					}
-					DoRPC(ctx, workerID, msg)
+					DoRPC(ctx, id, msg)
 				case <-ctx.Done():
-					fmt.Println("worker", workerID, "ended") // (happens after close at line 32)
+					fmt.Printf("worker %d done; context cancelled\n", id)
 					return
 				}
 			}
-		}(i)
+		}()
 	}
 
 loop:
-	for i := 0; i < 100; i++ {
-		// racing two channel operations against one another
+	for i := 0; i < n; i++ {
+		// context-aware sending to a channel.
 		select {
-		case workQueue <- i: // blocks until a receiver is available
-			// run this code
+		case ch <- i:
+			// do nothing in response
 		case <-ctx.Done():
-			fmt.Printf("sender was cancelled while sending message %d\n", i)
+			fmt.Println("sender context cancelled")
 			break loop
 		}
 	}
-	close(workQueue) // closes the channel (happens before line 24)
-	wg.Wait()        // blocks until the counter is zero (i.e. until all goroutines have finished)
-	fmt.Println("program ended")
+	close(ch)
+	wg.Wait()
+	fmt.Println("end of main")
 }
 
-// DoRPC fakes a remote procedure call.
-func DoRPC(ctx context.Context, workerID int, msg int) {
-	fmt.Printf("sending message %d from worker %d\n", msg, workerID)
-	// TODO: use the ctx in the real RPC.
-	time.Sleep(100 * time.Millisecond) // fake RPC.
-	// blocking call -- stops the currently running goroutine.
-	fmt.Println("worker", workerID, ": message", msg, "was sent")
+func DoRPC(ctx context.Context, workerID int, val int) {
+	fmt.Printf("worker: %d, executing RPC with data: %v\n", workerID, val)
+	time.Sleep(150 * time.Millisecond)
+	// pass context down into the HTTP library.
 }
