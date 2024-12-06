@@ -64,9 +64,9 @@ func main() {
 	var reducerWg sync.WaitGroup
 	countCh := make(chan map[string]int)
 	for i := 0; i < numReducers; i++ {
-		localCount := make(map[string]int)
 		reducerWg.Add(1)
 		go func() {
+			localCount := make(map[string]int)
 			defer func() {
 				reducerWg.Done()
 				if i == 0 {
@@ -94,5 +94,5 @@ func main() {
 	}()
 
 	consumerWg.Wait()
-	fmt.Print("main done")
+	fmt.Print("main done\n")
 }
