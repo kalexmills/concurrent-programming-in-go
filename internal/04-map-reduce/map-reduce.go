@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"sync"
 )
 
 var lines = []string{
@@ -27,37 +28,68 @@ func main() {
 		for _, line := range lines {
 			linesChan <- line
 		}
+		close(linesChan)
+		fmt.Println("producer finished")
 	}()
 
 	// start mappers
+	var mwg sync.WaitGroup
 	for i := 0; i < numMappers; i++ {
+		mwg.Add(1)
 		go func() {
+			defer func() {
+				mwg.Done()
+				if i == 0 {
+					mwg.Wait()
+					for _, ch := range wordsChan {
+						close(ch)
+					}
+				}
+			}()
 			for line := range linesChan {
 				words := strings.Split(line, " ")
 				for _, word := range words {
-					lowered := strings.ToLower(words[i])
+					lowered := strings.ToLower(word)
 					reducerID := int(lowered[0]-'a') % numReducers
-					wordsChan[reducerID] <- word
+					wordsChan[reducerID] <- lowered
 				}
 			}
+			fmt.Printf("mapper %d finished\n", i)
 		}()
 	}
 
 	// start reducers
+	var rwg sync.WaitGroup
 	for i := 0; i < numReducers; i++ {
+		rwg.Add(1)
 		go func() {
+			defer func() {
+				rwg.Done()
+				if i == 0 {
+					rwg.Wait()
+					close(countChan)
+				}
+			}()
 			localCount := make(map[string]int)
 			for word := range wordsChan[i] {
 				localCount[word]++
 			}
 			countChan <- localCount
+			fmt.Printf("reducer %d finished\n", i)
 		}()
 	}
 
 	// start consumer
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for count := range countChan {
 			fmt.Printf("received count: %v\n", count)
 		}
+		fmt.Println("consumer finished")
 	}()
+
+	wg.Wait()
+	fmt.Println("main finished")
 }
