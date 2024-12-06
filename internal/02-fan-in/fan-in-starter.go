@@ -1,20 +1,43 @@
 package main
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // https://goplay.tools/snippet/IVdAC39Drkx
 
 func main() {
 	ch := make(chan int)
-	var wg sync.WaitGroup
+	var cwg sync.WaitGroup
+	var pwg sync.WaitGroup
 
-	// TODO: start 10 'producer' goroutines
-	// Each producer should generate and send 10 integers to the consumer using fanInChan.
+	for i := 0; i < 10; i++ {
+		pwg.Add(1)
+		go func() {
+			defer func() {
+				pwg.Done()
+				if i == 0 {
+					pwg.Wait()
+					close(ch)
+				}
+			}()
+			for j := 0; j < 10; j++ {
+				ch <- i * j
+			}
+			fmt.Printf("producer %d shut down\n", i)
+		}()
+	}
 
-	// TODO: start 1 consumer goroutine
-	// The consumer should receive all of the integers from fanInChan and print them out.
+	cwg.Add(1)
+	go func() {
+		defer cwg.Done()
+		for data := range ch {
+			fmt.Printf("received %d\n", data)
+		}
+		fmt.Println("consumer shut down")
+	}()
 
-	// Challenge: Use wait-groups to ensure that every goroutine returns before the main() func stops.
-
-	wg.Wait()
+	pwg.Wait()
+	cwg.Wait()
 }
