@@ -11,22 +11,26 @@ func main() {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
-			err := ch.Send(i)
-			fmt.Printf("sent %d, err = %v\n", i, err)
-		}
-	}()
+	for j := 0; j < 2; j++ {
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				ch.Send(i)
+				fmt.Printf("sent %d\n", i)
+			}
+		}()
+	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 10; i++ {
-			data, err := ch.Receive()
-			fmt.Printf("received %d, err = %v\n", data, err)
-		}
-	}()
+	for j := 0; j < 2; j++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 10; i++ {
+				data := ch.Receive()
+				fmt.Printf("received %d\n", data)
+			}
+		}()
+	}
 
 	wg.Wait()
 }
@@ -55,7 +59,7 @@ func NewBufferedChan(size int) *BufferedChan {
 var ErrFull = errors.New("full")
 var ErrEmpty = errors.New("empty")
 
-func (bc *BufferedChan) Send(msg int) error {
+func (bc *BufferedChan) Send(msg int) {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
 
@@ -71,11 +75,9 @@ func (bc *BufferedChan) Send(msg int) error {
 		bc.isFull = true
 	}
 	bc.waitForNotEmpty.Signal()
-
-	return nil
 }
 
-func (bc *BufferedChan) Receive() (int, error) {
+func (bc *BufferedChan) Receive() int {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
 
@@ -89,5 +91,5 @@ func (bc *BufferedChan) Receive() (int, error) {
 	bc.isFull = false
 	bc.waitForNotFull.Signal() // wake up exactly one goroutine to make progress
 
-	return msg, nil
+	return msg
 }
