@@ -37,13 +37,18 @@ type BufferedChan struct {
 	tail   int // next space to read
 	isFull bool
 
-	mut *sync.Mutex
+	mut             *sync.Mutex
+	waitForNotFull  *sync.Cond
+	waitForNotEmpty *sync.Cond
 }
 
 func NewBufferedChan(size int) *BufferedChan {
+	mut := &sync.Mutex{}
 	return &BufferedChan{
-		data: make([]int, size),
-		mut:  &sync.Mutex{},
+		data:            make([]int, size),
+		mut:             mut,
+		waitForNotEmpty: sync.NewCond(mut),
+		waitForNotFull:  sync.NewCond(mut),
 	}
 }
 
@@ -54,9 +59,10 @@ func (bc *BufferedChan) Send(msg int) error {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
 
-	if bc.head == bc.tail && bc.isFull {
-		return ErrFull
+	for bc.head == bc.tail && bc.isFull {
+		bc.waitForNotFull.Wait() // unlock; wait; then get lock back
 	}
+	// we have the lock; and buffer is not full
 
 	bc.data[bc.head] = msg
 	bc.head = (bc.head + 1) % len(bc.data)
@@ -64,6 +70,7 @@ func (bc *BufferedChan) Send(msg int) error {
 	if bc.head == bc.tail {
 		bc.isFull = true
 	}
+	bc.waitForNotEmpty.Signal()
 
 	return nil
 }
@@ -72,14 +79,15 @@ func (bc *BufferedChan) Receive() (int, error) {
 	bc.mut.Lock()
 	defer bc.mut.Unlock()
 
-	if bc.head == bc.tail && !bc.isFull {
-		return 0, ErrEmpty
+	for bc.head == bc.tail && !bc.isFull {
+		bc.waitForNotEmpty.Wait()
 	}
 
 	msg := bc.data[bc.tail]
 	bc.tail = (bc.tail + 1) % len(bc.data)
 
 	bc.isFull = false
+	bc.waitForNotFull.Signal() // wake up exactly one goroutine to make progress
 
 	return msg, nil
 }
