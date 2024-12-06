@@ -2,7 +2,7 @@ package main
 
 import "sync"
 
-// https://go.dev/play/p/0YBVXu1N2CR
+// https://goplay.tools/snippet/IVdAC39Drkx
 
 func main() {
 	ch := make(chan int)
